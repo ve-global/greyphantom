@@ -92,18 +92,6 @@ class CheckAmbariAlerts < Sensu::Plugin::Check::CLI
   end
 
 
-  # Forward Alert to Sensu Client
-  def forward_alert(host, port, alert_info)
-    begin
-      sensu_client_socket = TCPSocket.open(host, port)
-      sensu_client_socket.print(alert_info.to_json)
-      resp_sensu_client_raw = sensu_client_socket.read
-    rescue => err
-      warning "ERROR: #{err}"
-    end
-  end
-
-
   # Get alerts from ambari, and send each back through sensu client
   def get_alerts(host, port, cluster_name, username, password, sensu_client_host, sensu_client_port)
     clustername = cluster_name.strip()
@@ -122,6 +110,7 @@ class CheckAmbariAlerts < Sensu::Plugin::Check::CLI
                       name: "#{ambari_alert['Alert']['definition_name']}",
                       output: "#{alert_item['Alert']['label']}",
                       state: "#{alert_item['Alert']['state']}",
+					  maintenance: "#{alert_item['Alert']['maintenance_state']}",
                       status: 2
       }
       # Forward alert directly to sensu client
@@ -129,11 +118,17 @@ class CheckAmbariAlerts < Sensu::Plugin::Check::CLI
       when "OK"
          next
       when "WARNING"
-         sensu_alert[:status] = 1
-         forward_alert( sensu_client_host, sensu_client_port, sensu_alert )
+		sensu_alert[:status] = 1
+		if sensu_alert[:maintenance] == "OFF"
+		  msg = "There is a warning in `#{sensu_alert[:cluster]}` cluster"
+		  send :warning, msg
+		end
       when "CRITICAL"
-         sensu_alert[:status] = 2
-         forward_alert( sensu_client_host, sensu_client_port, sensu_alert )
+        sensu_alert[:status] = 2
+		if sensu_alert[:maintenance] == "OFF"
+		  msg = "There is a critical alert in `#{sensu_alert[:cluster]}` cluster"
+		  send :critical, msg
+		end
       else
          next
       end
@@ -163,4 +158,3 @@ class CheckAmbariAlerts < Sensu::Plugin::Check::CLI
     ok
   end
 end
-
